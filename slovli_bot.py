@@ -12,6 +12,7 @@ import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from io import BytesIO
 
 from telegram import Update
 from telegram.ext import (
@@ -124,6 +125,137 @@ def keyboard_line(letter_status: Dict[str, str]) -> str:
         "".join(blocks[22:])
     ])
 
+# ===========================
+# Рендеринг изображения сетки
+# ===========================
+try:
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore
+except Exception:
+    Image = None  # type: ignore
+    ImageDraw = None  # type: ignore
+    ImageFont = None  # type: ignore
+
+def _load_cyrillic_font(pixel_size: int):
+    """Пытается подобрать шрифт с поддержкой кириллицы на разных ОС."""
+    if ImageFont is None:
+        return None
+    candidates: List[str] = [
+        # Имя шрифта, если установлен в системных путях
+        "DejaVuSans-Bold.ttf",
+        "DejaVuSans.ttf",
+    ]
+    # Windows системные шрифты
+    windir = os.environ.get("WINDIR", r"C:\\Windows")
+    win_fonts = [
+        os.path.join(windir, "Fonts", "arialbd.ttf"),
+        os.path.join(windir, "Fonts", "arial.ttf"),
+        os.path.join(windir, "Fonts", "segoeuib.ttf"),
+        os.path.join(windir, "Fonts", "segoeui.ttf"),
+        os.path.join(windir, "Fonts", "tahoma.ttf"),
+        os.path.join(windir, "Fonts", "calibrib.ttf"),
+        os.path.join(windir, "Fonts", "calibri.ttf"),
+    ]
+    candidates.extend(win_fonts)
+    # Linux популярные пути
+    candidates.extend([
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    ])
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, pixel_size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+def render_attempts_image(attempts: List[Tuple[str, List[str]]]) -> Optional[bytes]:
+    """Рендерит PNG-картинку сетки 6x5 с подсветкой букв. Возвращает байты или None, если Pillow недоступен."""
+    if Image is None:
+        try:
+            print("[WARN] Pillow не установлен: изображение сетки не будет отправлено. Установите пакет Pillow.")
+        except Exception:
+            pass
+        return None
+
+    tile = 80
+    gap = 10
+    padding = 20
+    rows = ATTEMPTS
+    cols = WORD_LEN
+
+    width = padding * 2 + cols * tile + (cols - 1) * gap
+    height = padding * 2 + rows * tile + (rows - 1) * gap
+
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    colors = {
+        "correct": (106, 170, 100),   # зелёный
+        "present": (201, 180, 88),    # жёлтый
+        "absent": (120, 124, 126),    # серый
+        "empty": (211, 214, 218),     # пустая ячейка
+    }
+    text_color = (255, 255, 255)
+    border_color = (120, 124, 126)
+
+    font = _load_cyrillic_font(int(tile * 0.5))
+
+    # Рисуем сетку
+    for r in range(rows):
+        for c in range(cols):
+            x0 = padding + c * (tile + gap)
+            y0 = padding + r * (tile + gap)
+            x1 = x0 + tile
+            y1 = y0 + tile
+
+            if r < len(attempts):
+                guess, marks = attempts[r]
+                ch = guess[c]
+                status = marks[c]
+                fill = colors.get(status, colors["absent"])
+            else:
+                ch = ""
+                fill = colors["empty"]
+
+            draw.rectangle([x0, y0, x1, y1], fill=fill)
+            draw.rectangle([x0, y0, x1, y1], outline=border_color, width=2)
+
+            if ch:
+                try:
+                    bbox = draw.textbbox((0, 0), ch, font=font)
+                    tw = bbox[2] - bbox[0]
+                    th = bbox[3] - bbox[1]
+                except Exception:
+                    tw, th = draw.textsize(ch, font=font)  # type: ignore[attr-defined]
+                tx = x0 + (tile - tw) // 2
+                ty = y0 + (tile - th) // 2 - 2
+                draw.text((tx, ty), ch, font=font, fill=text_color)
+
+    bio = BytesIO()
+    img.save(bio, format="PNG")
+    return bio.getvalue()
+
+async def reply_with_grid_image(update: Update, attempts: List[Tuple[str, List[str]]]):
+    img_bytes = render_attempts_image(attempts)
+    if not img_bytes:
+        return
+    bio = BytesIO(img_bytes)
+    # PTB can infer filename from file-like object name if present
+    try:
+        bio.name = "grid.png"  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    try:
+        bio.seek(0)
+        await update.message.reply_photo(photo=bio)
+    except Exception as e:
+        try:
+            print(f"[ERROR] Не удалось отправить изображение: {e}")
+        except Exception:
+            pass
+
 def display_name(update: Update) -> str:
     u = update.effective_user
     return (u.first_name or u.username or "Игрок")
@@ -154,6 +286,21 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS stats (
         user_id INTEGER PRIMARY KEY,
+        played INTEGER NOT NULL DEFAULT 0,
+        wins INTEGER NOT NULL DEFAULT 0,
+        current_streak INTEGER NOT NULL DEFAULT 0,
+        max_streak INTEGER NOT NULL DEFAULT 0,
+        dist1 INTEGER NOT NULL DEFAULT 0,
+        dist2 INTEGER NOT NULL DEFAULT 0,
+        dist3 INTEGER NOT NULL DEFAULT 0,
+        dist4 INTEGER NOT NULL DEFAULT 0,
+        dist5 INTEGER NOT NULL DEFAULT 0,
+        dist6 INTEGER NOT NULL DEFAULT 0
+    );
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS chat_stats (
+        chat_id INTEGER PRIMARY KEY,
         played INTEGER NOT NULL DEFAULT 0,
         wins INTEGER NOT NULL DEFAULT 0,
         current_streak INTEGER NOT NULL DEFAULT 0,
@@ -227,6 +374,42 @@ def finish_game_and_update_stats(winner_user_id: Optional[int], won: bool, attem
     """, (played, wins, current_streak, max_streak, *dist, winner_user_id))
     con.commit()
     con.close()
+
+def update_chat_stats(chat_id: int, won: bool, attempts_count: Optional[int]):
+    """Обновляет агрегированную статистику по конкретному чату."""
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM chat_stats WHERE chat_id=?", (chat_id,))
+    st = cur.fetchone()
+    if st is None:
+        cur.execute("INSERT INTO chat_stats(chat_id) VALUES(?)", (chat_id,))
+        cur.execute("SELECT * FROM chat_stats WHERE chat_id=?", (chat_id,))
+        st = cur.fetchone()
+
+    played = st["played"] + 1
+    wins = st["wins"] + (1 if won else 0)
+    current_streak = (st["current_streak"] + 1) if won else 0
+    max_streak = max(st["max_streak"], current_streak)
+
+    dist = [st[f"dist{i}"] for i in range(1, 7)]
+    if won and attempts_count and 1 <= attempts_count <= 6:
+        dist[attempts_count - 1] += 1
+
+    cur.execute("""
+    UPDATE chat_stats SET played=?, wins=?, current_streak=?, max_streak=?,
+        dist1=?,dist2=?,dist3=?,dist4=?,dist5=?,dist6=?
+    WHERE chat_id=?
+    """, (played, wins, current_streak, max_streak, *dist, chat_id))
+    con.commit()
+    con.close()
+
+def get_chat_stats(chat_id: int) -> Optional[sqlite3.Row]:
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM chat_stats WHERE chat_id=?", (chat_id,))
+    row = cur.fetchone()
+    con.close()
+    return row
 
 def get_stats(user_id: int) -> Optional[sqlite3.Row]:
     con = db()
@@ -315,8 +498,13 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not g or g["status"] != "IN_PROGRESS":
         # Игра не идёт — молчим
         return
+    
+    # Извлекаем слова кириллицей; если не ровно одно слово — игнорируем как не-ход
+    tokens = re.findall(r"[А-ЯЁа-яё]+", msg)
+    if len(tokens) != 1:
+        return
 
-    guess = normalize_word(msg)
+    guess = normalize_word(tokens[0])
 
     if len(guess) != WORD_LEN:
         await update.message.reply_text(f"Нужно слово из {WORD_LEN} букв.")
@@ -334,30 +522,56 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     marks = score_guess(guess, answer)
     attempts.append([guess, marks, user_id])
 
-    history_text = format_history([(a[0], a[1]) for a in attempts])
-
     if guess == answer:
         finish_game_and_update_stats(user_id, True, len(attempts))
+        update_chat_stats(chat_id, True, len(attempts))
         clear_game(chat_id)
         kb = letters_aggregate([(a[0], a[1]) for a in attempts])
-        await update.message.reply_text(history_text)
-        await update.message.reply_text(
-            f"{guess} — {name}\nПобеда за {len(attempts)} попыток! 🎉{keyboard_line(kb)}\n/new"
-        )
+        await reply_with_grid_image(update, [(a[0], a[1]) for a in attempts])
+        # Статистика чата
+        st = get_chat_stats(chat_id)
+        if st and st["played"]:
+            winrate = round(100 * st["wins"] / st["played"])
+            dist_text = "\n".join(f"{i}: {'▇' * min(st[f'dist{i}'],20)} {st[f'dist{i}']}" for i in range(1,7))
+            await update.message.reply_text(
+                f"{guess} — {name}\nПобеда за {len(attempts)} попыток! 🎉\n\n"
+                f"Сыграно в чате: {st['played']}\n"
+                f"Побед чата: {st['wins']} ({winrate}%)\n"
+                f"Серия: {st['current_streak']}, рекорд: {st['max_streak']}\n\n"
+                f"Распределение попыток:\n{dist_text}\n/new"
+            )
+        else:
+            await update.message.reply_text(
+                f"{guess} — {name}\nПобеда за {len(attempts)} попыток! 🎉\n/new"
+            )
         return
 
     if len(attempts) >= ATTEMPTS:
+        update_chat_stats(chat_id, False, None)
         clear_game(chat_id)
-        await update.message.reply_text(history_text)
-        await update.message.reply_text(f"{guess} — {name}\nНе вышло. Ответ был: {answer}\n/new")
+        await reply_with_grid_image(update, [(a[0], a[1]) for a in attempts])
+        # Статистика чата
+        st = get_chat_stats(chat_id)
+        if st and st["played"]:
+            winrate = round(100 * st["wins"] / st["played"])
+            dist_text = "\n".join(f"{i}: {'▇' * min(st[f'dist{i}'],20)} {st[f'dist{i}']}" for i in range(1,7))
+            await update.message.reply_text(
+                f"{guess} — {name}\nНе вышло. Ответ был: {answer}\n\n"
+                f"Сыграно в чате: {st['played']}\n"
+                f"Побед чата: {st['wins']} ({winrate}%)\n"
+                f"Серия: {st['current_streak']}, рекорд: {st['max_streak']}\n\n"
+                f"Распределение попыток:\n{dist_text}\n/new"
+            )
+        else:
+            await update.message.reply_text(f"{guess} — {name}\nНе вышло. Ответ был: {answer}\n/new")
         return
 
     save_game(chat_id, answer, attempts, "IN_PROGRESS")
     kb = letters_aggregate([(a[0], a[1]) for a in attempts])
     left = ATTEMPTS - len(attempts)
-    await update.message.reply_text(history_text)
+    await reply_with_grid_image(update, [(a[0], a[1]) for a in attempts])
     await update.message.reply_text(
-        f"{guess} — {name}\nОсталось попыток: {left}{keyboard_line(kb)}"
+        f"{guess} — {name}\nОсталось попыток: {left}"
     )
 
 # ===========================
