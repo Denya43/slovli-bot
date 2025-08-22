@@ -31,6 +31,11 @@ from .render import reply_with_grid_image
 WORDS_ALL: List[str] = []
 ANSWER_POOL: List[str] = []
 
+def set_word_lists(words_all: List[str], answer_pool: List[str]) -> None:
+    global WORDS_ALL, ANSWER_POOL
+    WORDS_ALL = words_all
+    ANSWER_POOL = answer_pool
+
 
 def display_name(update: Update) -> str:
     u = update.effective_user
@@ -128,16 +133,16 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     answer = g["answer"]
-    attempts = json.loads(g["attempts_json"])
+    attempts = json.loads(g["attempts_json"])  # список: [guess, marks, user_id]
 
-    marks = score_guess(guess, answer)
-    attempts.append([guess, marks, user_id])
-
-    # Запретим повторные попытки тем же словом в рамках одной игры
+    # Запретим повторные попытки тем же словом в рамках одной игры (до добавления нового хода)
     previous_guesses = {a[0] for a in attempts}
     if guess in previous_guesses:
         await update.message.reply_text("Это слово уже пробовали в этой игре.")
         return
+
+    marks = score_guess(guess, answer)
+    attempts.append([guess, marks, user_id])
 
     if guess == answer:
         finish_game_and_update_stats(user_id, True, len(attempts))

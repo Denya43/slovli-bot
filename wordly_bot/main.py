@@ -9,8 +9,6 @@ from telegram.ext import (
 from .config import TOKEN
 from .db import init_db
 from .handlers import (
-    ANSWER_POOL,
-    WORDS_ALL,
     bootstrap_words,
     cmd_giveup,
     cmd_help,
@@ -18,13 +16,14 @@ from .handlers import (
     cmd_start,
     cmd_stats,
     on_text,
+    set_word_lists,
 )
 
 
 def main():
-    global WORDS_ALL, ANSWER_POOL
     init_db()
-    WORDS_ALL, ANSWER_POOL = bootstrap_words()
+    words_all, answer_pool = bootstrap_words()
+    set_word_lists(words_all, answer_pool)
 
     if not TOKEN:
         raise RuntimeError("Нужен TELEGRAM_BOT_TOKEN")
