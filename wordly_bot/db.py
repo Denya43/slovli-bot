@@ -60,6 +60,17 @@ def init_db():
         );
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_user_wins (
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            wins INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(chat_id, user_id)
+        );
+        """
+    )
     con.commit()
     con.close()
 
@@ -182,6 +193,42 @@ def get_chat_stats(chat_id: int) -> Optional[sqlite3.Row]:
     row = cur.fetchone()
     con.close()
     return row
+
+
+def record_chat_win(chat_id: int, user_id: int, name: str):
+    """Увеличивает счёт побед пользователя внутри конкретного чата и обновляет имя."""
+    con = db()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO chat_user_wins(chat_id, user_id, name, wins)
+        VALUES(?, ?, ?, 1)
+        ON CONFLICT(chat_id, user_id) DO UPDATE SET
+            wins = chat_user_wins.wins + 1,
+            name = excluded.name
+        """,
+        (chat_id, user_id, name),
+    )
+    con.commit()
+    con.close()
+
+
+def get_chat_leaderboard(chat_id: int, limit: int = 10) -> List[sqlite3.Row]:
+    con = db()
+    cur = con.cursor()
+    cur.execute(
+        """
+        SELECT user_id, name, wins
+        FROM chat_user_wins
+        WHERE chat_id=?
+        ORDER BY wins DESC, name ASC
+        LIMIT ?
+        """,
+        (chat_id, limit),
+    )
+    rows = cur.fetchall()
+    con.close()
+    return rows
 
 
 

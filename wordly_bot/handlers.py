@@ -9,10 +9,12 @@ from .config import ATTEMPTS, WORD_LEN, TOKEN, WORDS_FILE, POOL_FILE
 from .db import (
     clear_game,
     finish_game_and_update_stats,
+    get_chat_leaderboard,
     get_chat_stats,
     get_game,
     get_stats,
     init_db,
+    record_chat_win,
     save_game,
     update_chat_stats,
 )
@@ -131,9 +133,16 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     marks = score_guess(guess, answer)
     attempts.append([guess, marks, user_id])
 
+    # Запретим повторные попытки тем же словом в рамках одной игры
+    previous_guesses = {a[0] for a in attempts}
+    if guess in previous_guesses:
+        await update.message.reply_text("Это слово уже пробовали в этой игре.")
+        return
+
     if guess == answer:
         finish_game_and_update_stats(user_id, True, len(attempts))
         update_chat_stats(chat_id, True, len(attempts))
+        record_chat_win(chat_id, user_id, name)
         clear_game(chat_id)
         await reply_with_grid_image(update, [(a[0], a[1]) for a in attempts])
         st = get_chat_stats(chat_id)
@@ -142,16 +151,28 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dist_text = "\n".join(
                 f"{i}: {'▇' * min(st[f'dist{i}'],20)} {st[f'dist{i}']}" for i in range(1, 7)
             )
+            leaderboard = get_chat_leaderboard(chat_id, limit=10)
+            lb_text = "\n".join(
+                f"{i+1}. {row['name'] or row['user_id']}: {row['wins']}"
+                for i, row in enumerate(leaderboard)
+            ) or "нет победителей"
             await update.message.reply_text(
                 f"{guess} — {name}\nПобеда за {len(attempts)} попыток! 🎉\n\n"
                 f"Сыграно в чате: {st['played']}\n"
                 f"Побед чата: {st['wins']} ({winrate}%)\n"
                 f"Серия: {st['current_streak']}, рекорд: {st['max_streak']}\n\n"
-                f"Распределение попыток:\n{dist_text}\n/new"
+                f"Распределение попыток:\n{dist_text}\n\n"
+                f"Топ победителей:\n{lb_text}\n/new"
             )
         else:
+            leaderboard = get_chat_leaderboard(chat_id, limit=10)
+            lb_text = "\n".join(
+                f"{i+1}. {row['name'] or row['user_id']}: {row['wins']}"
+                for i, row in enumerate(leaderboard)
+            ) or "нет победителей"
             await update.message.reply_text(
-                f"{guess} — {name}\nПобеда за {len(attempts)} попыток! 🎉\n/new"
+                f"{guess} — {name}\nПобеда за {len(attempts)} попыток! 🎉\n\n"
+                f"Топ победителей:\n{lb_text}\n/new"
             )
         return
 
