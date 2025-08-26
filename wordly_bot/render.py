@@ -52,12 +52,12 @@ def _load_cyrillic_font(pixel_size: int):
     return ImageFont.load_default()
 
 
-def render_attempts_image(attempts: List[Tuple[str, List[str]]]) -> Optional[bytes]:
+def render_attempts_image(attempts: List[Tuple[str, List[str]]], word_length: int = 5) -> Optional[bytes]:
     if Image is None:
         return None
 
     tile, gap, padding = 80, 10, 20
-    rows, cols = ATTEMPTS, WORD_LEN
+    rows, cols = ATTEMPTS, word_length
 
     width = padding * 2 + cols * tile + (cols - 1) * gap
     height = padding * 2 + rows * tile + (rows - 1) * gap
@@ -105,8 +105,8 @@ def render_attempts_image(attempts: List[Tuple[str, List[str]]]) -> Optional[byt
     return bio.getvalue()
 
 
-async def reply_with_grid_image(update: Update, attempts: List[Tuple[str, List[str]]]):
-    img_bytes = render_attempts_image(attempts)
+async def reply_with_grid_image(update: Update, attempts: List[Tuple[str, List[str]]], word_length: int = 5):
+    img_bytes = render_attempts_image(attempts, word_length)
     if not img_bytes:
         return
     bio = BytesIO(img_bytes)

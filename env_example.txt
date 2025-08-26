@@ -1,0 +1,15 @@
+# Telegram Bot Token (получите у @BotFather)
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+
+# ID администратора (ваш Telegram ID - получите у @userinfobot)
+SLOVLI_ADMIN_USER_ID=123456789
+
+# Файлы словарей
+SLOVLI_WORDS_FILE=words.txt
+SLOVLI_POOL_FILE=russian_5letter_nouns_200.txt
+
+# База данных
+SLOVLI_DB_FILE=slovli.db
+
+# Кодировка файлов словарей (опционально)
+SLOVLI_WORDS_ENCODING=utf-8

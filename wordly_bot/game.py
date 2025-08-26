@@ -88,11 +88,16 @@ def letters_aggregate(attempts: List[Tuple[str, List[str]]]) -> Dict[str, str]:
     return best
 
 
-def pick_answer(pool: List[str]) -> str:
+def pick_answer(pool: List[str], word_length: int = 5) -> str:
     while True:
         w = random.choice(pool)
-        if len(w) == WORD_LEN and re.fullmatch(r"[А-Я]{" + str(WORD_LEN) + "}", w):
+        if len(w) == word_length and re.fullmatch(r"[А-Я]{" + str(word_length) + "}", w):
             return w
+
+
+def get_words_for_length(word_length: int, base_words: List[str], custom_words: List[str]) -> List[str]:
+    """Получить все слова для заданной длины (включая пользовательские)"""
+    return base_words + custom_words
 
 
 

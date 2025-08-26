@@ -15,6 +15,15 @@ def db() -> sqlite3.Connection:
 def init_db():
     con = db()
     cur = con.cursor()
+    # Helper: ensure a column exists; if not, add it
+    def ensure_column(table: str, column: str, col_def_sql: str) -> None:
+        cur.execute(f"PRAGMA table_info({table})")
+        cols = {row[1] for row in cur.fetchall()}  # name is at index 1
+        if column not in cols:
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {col_def_sql}")
+            except Exception:
+                pass
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS games (
@@ -22,10 +31,13 @@ def init_db():
             answer TEXT NOT NULL,
             attempts_json TEXT NOT NULL DEFAULT '[]',
             status TEXT NOT NULL CHECK(status IN ('IN_PROGRESS','WON','LOST')),
+            word_length INTEGER NOT NULL DEFAULT 5,
             created_at INTEGER NOT NULL
         );
         """
     )
+    # In-place migration for existing DBs missing the column
+    ensure_column("games", "word_length", "word_length INTEGER NOT NULL DEFAULT 5")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS stats (
@@ -71,6 +83,27 @@ def init_db():
         );
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_settings (
+            chat_id INTEGER PRIMARY KEY,
+            word_length INTEGER NOT NULL DEFAULT 5,
+            created_at INTEGER NOT NULL
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS custom_words (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT NOT NULL,
+            word_length INTEGER NOT NULL,
+            added_by INTEGER NOT NULL,
+            added_at INTEGER NOT NULL,
+            UNIQUE(word, word_length)
+        );
+        """
+    )
     con.commit()
     con.close()
 
@@ -84,20 +117,21 @@ def get_game(chat_id: int) -> Optional[sqlite3.Row]:
     return row
 
 
-def save_game(chat_id: int, answer: str, attempts: List[List], status: str):
+def save_game(chat_id: int, answer: str, attempts: List[List], status: str, word_length: int = 5):
     con = db()
     cur = con.cursor()
     cur.execute(
         """
-        INSERT INTO games(chat_id, answer, attempts_json, status, created_at)
-        VALUES(?,?,?,?,?)
+        INSERT INTO games(chat_id, answer, attempts_json, status, word_length, created_at)
+        VALUES(?,?,?,?,?,?)
         ON CONFLICT(chat_id) DO UPDATE SET
             answer=excluded.answer,
             attempts_json=excluded.attempts_json,
             status=excluded.status,
+            word_length=excluded.word_length,
             created_at=excluded.created_at
         """,
-        (chat_id, answer, json.dumps(attempts, ensure_ascii=False), status, int(time.time())),
+        (chat_id, answer, json.dumps(attempts, ensure_ascii=False), status, word_length, int(time.time())),
     )
     con.commit()
     con.close()
@@ -229,6 +263,70 @@ def get_chat_leaderboard(chat_id: int, limit: int = 10) -> List[sqlite3.Row]:
     rows = cur.fetchall()
     con.close()
     return rows
+
+
+def get_chat_settings(chat_id: int) -> Optional[sqlite3.Row]:
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM chat_settings WHERE chat_id=?", (chat_id,))
+    row = cur.fetchone()
+    con.close()
+    return row
+
+
+def save_chat_settings(chat_id: int, word_length: int):
+    con = db()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO chat_settings(chat_id, word_length, created_at)
+        VALUES(?,?,?)
+        ON CONFLICT(chat_id) DO UPDATE SET
+            word_length=excluded.word_length,
+            created_at=excluded.created_at
+        """,
+        (chat_id, word_length, int(time.time())),
+    )
+    con.commit()
+    con.close()
+
+
+def get_custom_words(word_length: int) -> List[str]:
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT word FROM custom_words WHERE word_length=? ORDER BY word", (word_length,))
+    words = [row[0] for row in cur.fetchall()]
+    con.close()
+    return words
+
+
+def add_custom_word(word: str, word_length: int, user_id: int) -> bool:
+    con = db()
+    cur = con.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO custom_words(word, word_length, added_by, added_at)
+            VALUES(?,?,?,?)
+            """,
+            (word.upper(), word_length, user_id, int(time.time())),
+        )
+        con.commit()
+        con.close()
+        return True
+    except sqlite3.IntegrityError:
+        con.close()
+        return False
+
+
+def remove_custom_word(word: str, word_length: int) -> bool:
+    con = db()
+    cur = con.cursor()
+    cur.execute("DELETE FROM custom_words WHERE word=? AND word_length=?", (word.upper(), word_length))
+    deleted = cur.rowcount > 0
+    con.commit()
+    con.close()
+    return deleted
 
 
 
