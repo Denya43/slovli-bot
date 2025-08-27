@@ -95,9 +95,57 @@ def pick_answer(pool: List[str], word_length: int = 5) -> str:
             return w
 
 
-def get_words_for_length(word_length: int, base_words: List[str], custom_words: List[str]) -> List[str]:
-    """Получить все слова для заданной длины (включая пользовательские)"""
-    return base_words + custom_words
+def get_words_for_length(word_length: int, all_words: List[str]) -> List[str]:
+    """Получить все слова для заданной длины"""
+    return all_words
+
+
+def add_word_to_file(word: str, words_file_path: str) -> bool:
+    """Добавить слово в файл словаря"""
+    try:
+        # Читаем существующие слова
+        with open(words_file_path, 'r', encoding='utf-8') as f:
+            words = set(line.strip().upper() for line in f if line.strip())
+        
+        word_upper = word.upper()
+        if word_upper in words:
+            return False  # Слово уже есть
+        
+        # Добавляем новое слово
+        words.add(word_upper)
+        
+        # Записываем обратно в отсортированном порядке
+        with open(words_file_path, 'w', encoding='utf-8') as f:
+            for w in sorted(words):
+                f.write(w + '\n')
+        
+        return True
+    except Exception:
+        return False
+
+
+def remove_word_from_file(word: str, words_file_path: str) -> bool:
+    """Удалить слово из файла словаря"""
+    try:
+        # Читаем существующие слова
+        with open(words_file_path, 'r', encoding='utf-8') as f:
+            words = set(line.strip().upper() for line in f if line.strip())
+        
+        word_upper = word.upper()
+        if word_upper not in words:
+            return False  # Слова нет в файле
+        
+        # Удаляем слово
+        words.remove(word_upper)
+        
+        # Записываем обратно в отсортированном порядке
+        with open(words_file_path, 'w', encoding='utf-8') as f:
+            for w in sorted(words):
+                f.write(w + '\n')
+        
+        return True
+    except Exception:
+        return False
 
 
 

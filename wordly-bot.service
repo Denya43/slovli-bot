@@ -1,0 +1,17 @@
+[Unit]
+Description=Wordly Telegram Bot
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/%i/wordly-bot
+ExecStart=/usr/local/bin/docker-compose up -d
+ExecStop=/usr/local/bin/docker-compose down
+TimeoutStartSec=0
+User=%i
+Group=%i
+
+[Install]
+WantedBy=multi-user.target

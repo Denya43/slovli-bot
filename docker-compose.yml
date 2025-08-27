@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  wordly-bot:
+    build: .
+    container_name: wordly-bot
+    restart: unless-stopped
+    volumes:
+      # Монтируем директорию для персистентного хранения данных
+      - ./data:/app/data
+      # Монтируем .env файл
+      - ./.env:/app/.env:ro
+    environment:
+      # Переопределяем пути к файлам для контейнера
+      - SLOVLI_DB_FILE=/app/data/slovli.db
+      - SLOVLI_WORDS_FILE=/app/words.txt
+    # Автоматический перезапуск при падении
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[p]ython -m wordly_bot.main' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

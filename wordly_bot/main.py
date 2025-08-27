@@ -23,6 +23,10 @@ from .handlers import (
     cmd_removeword,
     cmd_words,
     cmd_checkword,
+    cmd_addmoderator,
+    cmd_removemoderator,
+    cmd_moderators,
+    cmd_myrole,
 )
 
 
@@ -70,6 +74,10 @@ def main():
     app.add_handler(CommandHandler("removeword", cmd_removeword))
     app.add_handler(CommandHandler("words", cmd_words))
     app.add_handler(CommandHandler("checkword", cmd_checkword))
+    app.add_handler(CommandHandler("addmoderator", cmd_addmoderator))
+    app.add_handler(CommandHandler("removemoderator", cmd_removemoderator))
+    app.add_handler(CommandHandler("moderators", cmd_moderators))
+    app.add_handler(CommandHandler("myrole", cmd_myrole))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
     total_words = sum(len(words) for words in words_by_length.values())

@@ -104,6 +104,39 @@ def init_db():
         );
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS deleted_words (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT NOT NULL,
+            word_length INTEGER NOT NULL,
+            deleted_by INTEGER NOT NULL,
+            deleted_at INTEGER NOT NULL,
+            UNIQUE(word, word_length)
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS moderators (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            added_by INTEGER NOT NULL,
+            added_at INTEGER NOT NULL
+        );
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            last_seen INTEGER NOT NULL
+        );
+        """
+    )
     con.commit()
     con.close()
 
@@ -327,6 +360,181 @@ def remove_custom_word(word: str, word_length: int) -> bool:
     con.commit()
     con.close()
     return deleted
+
+
+def get_deleted_words(word_length: int) -> List[str]:
+    """Получить список удаленных слов для заданной длины"""
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT word FROM deleted_words WHERE word_length=? ORDER BY word", (word_length,))
+    words = [row[0] for row in cur.fetchall()]
+    con.close()
+    return words
+
+
+def add_deleted_word(word: str, word_length: int, user_id: int) -> bool:
+    """Добавить слово в черный список (пометить как удаленное)"""
+    con = db()
+    cur = con.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO deleted_words(word, word_length, deleted_by, deleted_at)
+            VALUES(?,?,?,?)
+            """,
+            (word.upper(), word_length, user_id, int(time.time())),
+        )
+        con.commit()
+        con.close()
+        return True
+    except sqlite3.IntegrityError:
+        con.close()
+        return False
+
+
+def remove_deleted_word(word: str, word_length: int) -> bool:
+    """Убрать слово из черного списка (восстановить)"""
+    con = db()
+    cur = con.cursor()
+    cur.execute("DELETE FROM deleted_words WHERE word=? AND word_length=?", (word.upper(), word_length))
+    deleted = cur.rowcount > 0
+    con.commit()
+    con.close()
+    return deleted
+
+
+def remove_any_word(word: str, word_length: int, user_id: int) -> tuple[bool, str]:
+    """
+    Удалить любое слово (из пользовательских или добавить в черный список системных)
+    Возвращает (успех, описание_действия)
+    """
+    con = db()
+    cur = con.cursor()
+    
+    # Сначала проверяем, есть ли слово в пользовательских
+    cur.execute("SELECT COUNT(*) FROM custom_words WHERE word=? AND word_length=?", (word.upper(), word_length))
+    custom_count = cur.fetchone()[0]
+    
+    if custom_count > 0:
+        # Удаляем из пользовательских слов
+        cur.execute("DELETE FROM custom_words WHERE word=? AND word_length=?", (word.upper(), word_length))
+        con.commit()
+        con.close()
+        return True, "удалено из пользовательского словаря"
+    else:
+        # Добавляем в черный список
+        try:
+            cur.execute(
+                """
+                INSERT INTO deleted_words(word, word_length, deleted_by, deleted_at)
+                VALUES(?,?,?,?)
+                """,
+                (word.upper(), word_length, user_id, int(time.time())),
+            )
+            con.commit()
+            con.close()
+            return True, "добавлено в черный список (исключено из игры)"
+        except sqlite3.IntegrityError:
+            con.close()
+            return False, "уже удалено ранее"
+
+
+def add_moderator(user_id: int, username: str, added_by: int) -> bool:
+    """Добавить модератора"""
+    con = db()
+    cur = con.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO moderators(user_id, username, added_by, added_at)
+            VALUES(?,?,?,?)
+            """,
+            (user_id, username, added_by, int(time.time())),
+        )
+        con.commit()
+        con.close()
+        return True
+    except sqlite3.IntegrityError:
+        con.close()
+        return False
+
+
+def remove_moderator(user_id: int) -> bool:
+    """Удалить модератора"""
+    con = db()
+    cur = con.cursor()
+    cur.execute("DELETE FROM moderators WHERE user_id=?", (user_id,))
+    deleted = cur.rowcount > 0
+    con.commit()
+    con.close()
+    return deleted
+
+
+def get_moderators() -> List[sqlite3.Row]:
+    """Получить список всех модераторов"""
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM moderators ORDER BY added_at")
+    moderators = cur.fetchall()
+    con.close()
+    return moderators
+
+
+def is_moderator(user_id: int) -> bool:
+    """Проверить, является ли пользователь модератором"""
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT COUNT(*) FROM moderators WHERE user_id=?", (user_id,))
+    count = cur.fetchone()[0]
+    con.close()
+    return count > 0
+
+
+def is_admin_or_moderator(user_id: int, admin_id: int) -> bool:
+    """Проверить, является ли пользователь администратором или модератором"""
+    return user_id == admin_id or is_moderator(user_id)
+
+
+def save_user_info(user_id: int, username: str = None, first_name: str = None, last_name: str = None):
+    """Сохранить или обновить информацию о пользователе"""
+    con = db()
+    cur = con.cursor()
+    cur.execute(
+        """
+        INSERT INTO users(user_id, username, first_name, last_name, last_seen)
+        VALUES(?,?,?,?,?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            username=excluded.username,
+            first_name=excluded.first_name,
+            last_name=excluded.last_name,
+            last_seen=excluded.last_seen
+        """,
+        (user_id, username, first_name, last_name, int(time.time())),
+    )
+    con.commit()
+    con.close()
+
+
+def find_user_by_username(username: str) -> Optional[sqlite3.Row]:
+    """Найти пользователя по username (без @)"""
+    con = db()
+    cur = con.cursor()
+    # Убираем @ если он есть
+    clean_username = username.lstrip('@').lower()
+    cur.execute("SELECT * FROM users WHERE LOWER(username)=?", (clean_username,))
+    user = cur.fetchone()
+    con.close()
+    return user
+
+
+def get_user_info(user_id: int) -> Optional[sqlite3.Row]:
+    """Получить информацию о пользователе по ID"""
+    con = db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    user = cur.fetchone()
+    con.close()
+    return user
 
 
 
