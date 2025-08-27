@@ -78,22 +78,40 @@ else
     log "Docker Compose уже установлен"
 fi
 
-# Определяем директорию для установки
-INSTALL_DIR="$HOME/wordly-bot"
+# Определяем директорию для установки (домашняя директория пользователя)
+INSTALL_DIR="$HOME"
+TEMP_DIR="/tmp/wordly-bot-install"
 
-# Клонируем репозиторий или обновляем существующий
-if [ -d "$INSTALL_DIR" ]; then
-    warn "Директория $INSTALL_DIR уже существует. Обновляем..."
-    cd "$INSTALL_DIR"
-    git pull
-else
-    log "Клонируем репозиторий в $INSTALL_DIR..."
-    git clone https://github.com/yourusername/wordly-bot.git "$INSTALL_DIR"
-    cd "$INSTALL_DIR"
+# Клонируем репозиторий во временную директорию
+if [ -d "$TEMP_DIR" ]; then
+    rm -rf "$TEMP_DIR"
 fi
+
+log "Клонируем репозиторий..."
+git clone https://github.com/Denya43/slovli-bot.git "$TEMP_DIR"
+
+# Копируем все файлы проекта в домашнюю директорию
+log "Копируем файлы проекта в $INSTALL_DIR..."
+cd "$TEMP_DIR"
+
+# Копируем все файлы кроме .git
+cp -r wordly_bot/ "$INSTALL_DIR/"
+cp requirements.txt "$INSTALL_DIR/"
+cp words.txt "$INSTALL_DIR/"
+cp docker-compose.yml "$INSTALL_DIR/"
+cp Dockerfile "$INSTALL_DIR/"
+cp Makefile "$INSTALL_DIR/"
+cp .dockerignore "$INSTALL_DIR/"
+cp wordly-bot.service "$INSTALL_DIR/"
+
+# Переходим в домашнюю директорию
+cd "$INSTALL_DIR"
 
 # Создаем директорию для данных
 mkdir -p data
+
+# Удаляем временную директорию
+rm -rf "$TEMP_DIR"
 
 # Создаем .env файл если его нет
 if [ ! -f ".env" ]; then
@@ -123,6 +141,7 @@ fi
 
 # Создаем systemd сервис
 log "Создаем systemd сервис..."
+DOCKER_COMPOSE_PATH=$(which docker-compose || echo "/usr/local/bin/docker-compose")
 sudo tee /etc/systemd/system/wordly-bot.service > /dev/null << EOF
 [Unit]
 Description=Wordly Telegram Bot
@@ -133,9 +152,11 @@ After=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/local/bin/docker-compose up -d
-ExecStop=/usr/local/bin/docker-compose down
+ExecStart=$DOCKER_COMPOSE_PATH up -d
+ExecStop=$DOCKER_COMPOSE_PATH down
 TimeoutStartSec=0
+User=$USER
+Group=$USER
 
 [Install]
 WantedBy=multi-user.target
@@ -150,7 +171,7 @@ sudo systemctl enable wordly-bot.service
 log "✅ Установка завершена!"
 echo
 echo "📝 Следующие шаги:"
-echo "1. Отредактируйте файл $INSTALL_DIR/.env"
+echo "1. Отредактируйте файл ~/.env"
 echo "2. Запустите бота: sudo systemctl start wordly-bot"
 echo "3. Проверьте статус: sudo systemctl status wordly-bot"
 echo "4. Просмотр логов: docker-compose logs -f"
@@ -159,10 +180,13 @@ echo "🔧 Полезные команды:"
 echo "   Запуск:     sudo systemctl start wordly-bot"
 echo "   Остановка:  sudo systemctl stop wordly-bot"
 echo "   Перезапуск: sudo systemctl restart wordly-bot"
-echo "   Логи:       cd $INSTALL_DIR && docker-compose logs -f"
-echo "   Обновление: cd $INSTALL_DIR && git pull && docker-compose build --no-cache && sudo systemctl restart wordly-bot"
+echo "   Логи:       docker-compose logs -f"
+echo "   Обновление: curl -fsSL https://raw.githubusercontent.com/Denya43/slovli-bot/main/install.sh | bash"
+echo
+echo "📁 Все файлы установлены в домашнюю директорию: $HOME"
 echo
 
 if [ ! -f ".env" ] || grep -q "your_bot_token_here" .env; then
     error "⚠️  НЕ ЗАБУДЬТЕ настроить .env файл перед запуском!"
+    echo "   Выполните: nano ~/.env"
 fi
