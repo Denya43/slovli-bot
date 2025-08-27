@@ -109,6 +109,7 @@ cp words.txt "$INSTALL_DIR/"
 cp Makefile "$INSTALL_DIR/" 2>/dev/null || true
 cp .dockerignore "$INSTALL_DIR/" 2>/dev/null || true
 cp wordly-bot.service "$INSTALL_DIR/" 2>/dev/null || true
+cp logs.sh "$INSTALL_DIR/" 2>/dev/null || true
 
 # Создаем оптимизированный docker-compose.yml
 log "Создаем docker-compose.yml..."
@@ -200,6 +201,11 @@ mkdir -p data
 chmod 755 data
 chown $USER:$USER data
 
+# Делаем скрипт логов исполняемым
+if [ -f "logs.sh" ]; then
+    chmod +x logs.sh
+fi
+
 # Удаляем временную директорию
 rm -rf "$TEMP_DIR"
 
@@ -270,8 +276,20 @@ echo "🔧 Полезные команды:"
 echo "   Запуск:     sudo systemctl start wordly-bot"
 echo "   Остановка:  sudo systemctl stop wordly-bot"
 echo "   Перезапуск: sudo systemctl restart wordly-bot"
-echo "   Логи:       docker-compose logs -f"
-echo "   Обновление: curl -fsSL https://raw.githubusercontent.com/Denya43/slovli-bot/main/install.sh | bash"
+echo "   Статус:     sudo systemctl status wordly-bot"
+echo
+echo "📋 Просмотр логов:"
+echo "   Следить за логами: ./logs.sh live"
+echo "   Последние логи:    ./logs.sh tail"
+echo "   Только ошибки:     ./logs.sh errors"
+echo "   Системные логи:    ./logs.sh system"
+echo "   Все команды:       ./logs.sh help"
+echo
+echo "   Или через docker-compose:"
+echo "   docker-compose logs -f"
+echo
+echo "🔄 Обновление:"
+echo "   curl -fsSL https://raw.githubusercontent.com/Denya43/slovli-bot/main/install.sh | bash"
 echo
 echo "📁 Все файлы установлены в домашнюю директорию: $HOME"
 echo

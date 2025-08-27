@@ -27,9 +27,25 @@ stop: ## Остановить бота
 
 restart: stop start ## Перезапустить бота
 
-logs: ## Показать логи
+logs: ## Показать логи (следить за новыми)
 	@echo "$(GREEN)Логи бота (Ctrl+C для выхода):$(RESET)"
 	docker-compose logs -f
+
+logs-all: ## Показать все логи
+	@echo "$(GREEN)Все логи бота:$(RESET)"
+	docker-compose logs
+
+logs-tail: ## Показать последние 50 строк логов
+	@echo "$(GREEN)Последние 50 строк логов:$(RESET)"
+	docker-compose logs --tail=50
+
+logs-today: ## Показать логи за сегодня
+	@echo "$(GREEN)Логи за сегодня:$(RESET)"
+	docker-compose logs --since="$(shell date +%Y-%m-%d)"
+
+logs-errors: ## Показать только ошибки
+	@echo "$(GREEN)Логи с ошибками:$(RESET)"
+	docker-compose logs | grep -i "error\|exception\|traceback\|failed"
 
 status: ## Показать статус контейнеров
 	@echo "$(GREEN)Статус контейнеров:$(RESET)"
