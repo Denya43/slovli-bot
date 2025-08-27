@@ -59,8 +59,16 @@ if ! command -v docker &> /dev/null; then
     sudo usermod -aG docker $USER
     
     log "Docker установлен успешно!"
+    warn "Пользователь добавлен в группу docker. Возможно потребуется перелогинивание."
 else
     log "Docker уже установлен"
+fi
+
+# Проверяем права доступа к Docker
+if ! docker ps >/dev/null 2>&1; then
+    warn "Нет доступа к Docker. Добавляем пользователя в группу docker..."
+    sudo usermod -aG docker $USER
+    warn "Возможно потребуется выполнить: newgrp docker"
 fi
 
 # Проверяем наличие docker-compose
@@ -98,17 +106,99 @@ cd "$TEMP_DIR"
 cp -r wordly_bot/ "$INSTALL_DIR/"
 cp requirements.txt "$INSTALL_DIR/"
 cp words.txt "$INSTALL_DIR/"
-cp docker-compose.yml "$INSTALL_DIR/"
-cp Dockerfile "$INSTALL_DIR/"
-cp Makefile "$INSTALL_DIR/"
-cp .dockerignore "$INSTALL_DIR/"
-cp wordly-bot.service "$INSTALL_DIR/"
+cp Makefile "$INSTALL_DIR/" 2>/dev/null || true
+cp .dockerignore "$INSTALL_DIR/" 2>/dev/null || true
+cp wordly-bot.service "$INSTALL_DIR/" 2>/dev/null || true
+
+# Создаем оптимизированный docker-compose.yml
+log "Создаем docker-compose.yml..."
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+cat > "$INSTALL_DIR/docker-compose.yml" << EOF
+version: '3.8'
+
+services:
+  wordly-bot:
+    build: .
+    container_name: wordly-bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      - SLOVLI_DB_FILE=/app/data/slovli.db
+      - SLOVLI_WORDS_FILE=/app/words.txt
+      - LANG=ru_RU.UTF-8
+      - LANGUAGE=ru_RU:ru
+      - LC_ALL=ru_RU.UTF-8
+      - PYTHONIOENCODING=utf-8
+    user: "$USER_ID:$GROUP_ID"
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[p]ython -m wordly_bot.main' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+EOF
+
+# Создаем оптимизированный Dockerfile с поддержкой русских шрифтов
+log "Создаем Dockerfile с поддержкой кириллицы..."
+cat > "$INSTALL_DIR/Dockerfile" << 'EOF'
+FROM python:3.11-slim
+
+# Отключаем интерактивный режим для apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Устанавливаем системные зависимости и русские шрифты
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    locales \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
+    fonts-liberation \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Настраиваем русскую локаль
+RUN sed -i '/ru_RU.UTF-8/s/^# //g' /etc/locale.gen && \
+    locale-gen ru_RU.UTF-8
+
+# Устанавливаем переменные окружения для локали
+ENV LANG=ru_RU.UTF-8
+ENV LANGUAGE=ru_RU:ru
+ENV LC_ALL=ru_RU.UTF-8
+ENV PYTHONIOENCODING=utf-8
+
+WORKDIR /app
+
+# Копируем и устанавливаем зависимости Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Копируем исходный код
+COPY . .
+
+# Создаем директорию для данных с правильными правами
+RUN mkdir -p /app/data
+
+# Обновляем кэш шрифтов
+RUN fc-cache -fv
+
+# Возвращаем нормальный режим
+ENV DEBIAN_FRONTEND=
+
+CMD ["python", "-m", "wordly_bot.main"]
+EOF
 
 # Переходим в домашнюю директорию
 cd "$INSTALL_DIR"
 
-# Создаем директорию для данных
+# Создаем директорию для данных с правильными правами
+log "Настраиваем директорию данных..."
 mkdir -p data
+chmod 755 data
+chown $USER:$USER data
 
 # Удаляем временную директорию
 rm -rf "$TEMP_DIR"
@@ -189,4 +279,23 @@ echo
 if [ ! -f ".env" ] || grep -q "your_bot_token_here" .env; then
     error "⚠️  НЕ ЗАБУДЬТЕ настроить .env файл перед запуском!"
     echo "   Выполните: nano ~/.env"
+    echo
+    echo "📝 Что нужно настроить в .env:"
+    echo "   1. TELEGRAM_BOT_TOKEN - получите у @BotFather"
+    echo "   2. SLOVLI_ADMIN_USER_ID - получите у @userinfobot"
+    echo
+fi
+
+log "🔧 Проверка готовности к запуску..."
+if docker ps >/dev/null 2>&1; then
+    log "✅ Docker доступен"
+else
+    warn "⚠️  Нет доступа к Docker. Выполните: newgrp docker"
+fi
+
+if [ -f ".env" ] && ! grep -q "your_bot_token_here" .env; then
+    log "✅ Файл .env настроен"
+    log "🚀 Можно запускать: sudo systemctl start wordly-bot"
+else
+    warn "⚠️  Требуется настройка .env файла"
 fi
