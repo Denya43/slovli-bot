@@ -37,7 +37,7 @@ SLOVLI_WORDS_ENCODING=utf-8
 
 3. Запустите бота:
 ```bash
-python slovli_bot.py
+python -m wordly_bot.main
 ```
 
 ## Команды
@@ -114,7 +114,7 @@ python slovli_bot.py
 
 ## Структура файлов
 
-- `slovli_bot.py` - основной файл бота
+- `wordly_bot/main.py` - основной файл бота
 - `words.txt` - основной словарь (слова разной длины)
 - `slovli.db` - база данных SQLite
 - `requirements.txt` - зависимости Python
@@ -149,17 +149,29 @@ python slovli_bot.py
 
 ### 🚀 Автоматическая установка (рекомендуется)
 
-Самый простой способ установить бота на VPS:
-
+#### **Установка от обычного пользователя:**
 ```bash
 # Скачиваем и запускаем скрипт установки
-curl -fsSL https://raw.githubusercontent.com/yourusername/wordly-bot/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Denya43/slovli-bot/main/install.sh | bash
 
 # Или клонируем репозиторий и запускаем
-git clone https://github.com/yourusername/wordly-bot.git
-cd wordly-bot
+git clone https://github.com/Denya43/slovli-bot.git
+cd slovli-bot
 chmod +x install.sh
 ./install.sh
+```
+
+#### **Автоматическая установка от root (создает пользователя):**
+```bash
+# Скачиваем и запускаем скрипт установки от root
+curl -fsSL https://raw.githubusercontent.com/Denya43/slovli-bot/main/install_root.sh | bash
+
+# Скрипт автоматически:
+# - Создаст пользователя 'wordly'
+# - Установит Docker и Docker Compose
+# - Клонирует репозиторий
+# - Создаст systemd сервис
+# - Настроит права доступа
 ```
 
 Скрипт автоматически:
@@ -171,8 +183,8 @@ chmod +x install.sh
 
 1. **Клонируйте репозиторий:**
 ```bash
-git clone https://github.com/yourusername/wordly-bot.git
-cd wordly-bot
+git clone https://github.com/Denya43/slovli-bot.git
+cd slovli-bot
 ```
 
 2. **Создайте .env файл:**
@@ -210,6 +222,25 @@ make logs
 
 # Обновление проекта
 make update
+```
+
+### 🎮 Управление через скрипт (после установки от root)
+
+После установки через `install_root.sh` доступен удобный скрипт управления:
+
+```bash
+# Переключитесь на пользователя wordly
+su - wordly
+cd slovli-bot
+
+# Управление ботом
+./manage.sh start      # Запустить
+./manage.sh stop       # Остановить
+./manage.sh restart    # Перезапустить
+./manage.sh status     # Статус
+./manage.sh logs       # Логи
+./manage.sh update     # Обновить
+./manage.sh help       # Справка
 ```
 
 ### 🔄 Быстрый деплой
@@ -252,7 +283,7 @@ sudo systemctl enable wordly-bot
 ### 📁 Структура файлов на сервере
 
 ```
-~/wordly-bot/
+~/slovli-bot/
 ├── docker-compose.yml    # Конфигурация Docker
 ├── Dockerfile           # Образ приложения
 ├── .env                # Настройки (создается при установке)
